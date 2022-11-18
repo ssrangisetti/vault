@@ -193,7 +193,7 @@ func (c *Cache) Get(ctx context.Context, key string) (*Entry, error) {
 	c.metricSink.IncrCounter([]string{"cache", "miss"}, 1)
 	// Read from the underlying backend
 	ent, err := c.backend.Get(ctx, key)
-	if err != nil {
+	if err != nil || ent == nil {
 		return nil, err
 	}
 

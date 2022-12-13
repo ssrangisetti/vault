@@ -18,9 +18,8 @@ func (b *backend) pathRefreshKeyCache() *framework.Path {
 		Pattern: "keys/" + framework.GenericNameRegex("name") + "/refresh-cache",
 		Fields: map[string]*framework.FieldSchema{
 			"name": {
-
 				Type:        framework.TypeString,
-				Description: "Name of the key",
+				Description: "Name of the key to be refreshed",
 			},
 		},
 
@@ -39,6 +38,6 @@ func (b *backend) refreshPolicyCache(ctx context.Context, req *logical.Request, 
 		return nil, err
 	}
 
-	ctx = context.WithValue(ctx, keysutil.ExplicitCacheRefreshCtxKey, true)
+	ctx = keysutil.CacheRefreshContext(ctx, true)
 	return b.pathPolicyRead(ctx, req, d)
 }

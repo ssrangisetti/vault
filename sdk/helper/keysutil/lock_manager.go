@@ -24,8 +24,14 @@ const (
 	shared                     = false
 	exclusive                  = true
 	currentConvergentVersion   = 3
-	ExplicitCacheRefreshCtxKey = "explicit_cache_refresh"
+	explicitCacheRefreshCtxKey = "explicit_cache_refresh"
 )
+
+// CacheRefreshContext returns a context with an added value denoting if the
+// cache should attempt a refresh.
+func CacheRefreshContext(ctx context.Context, r bool) context.Context {
+	return context.WithValue(ctx, explicitCacheRefreshCtxKey, r)
+}
 
 var errNeedExclusiveLock = errors.New("an exclusive lock is needed for this operation")
 
@@ -294,10 +300,10 @@ func (lm *LockManager) GetPolicy(ctx context.Context, req PolicyRequest, rand io
 
 	// Check if it's in our cache. If so, return right away.
 	if lm.useCache {
-		r := ctx.Value(ExplicitCacheRefreshCtxKey)
+		r := ctx.Value(explicitCacheRefreshCtxKey)
 		if r != nil && r.(bool) {
 			lm.cache.Delete(req.Name)
-			ctx = context.WithValue(ctx, physical.RefreshCacheCtxKey, true)
+			ctx = physical.CacheRefreshContext(ctx, true)
 		}
 		pRaw, ok = lm.cache.Load(req.Name)
 	}

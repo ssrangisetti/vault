@@ -539,11 +539,6 @@ func (lm *LockManager) ImportPolicy(ctx context.Context, req PolicyRequest, key 
 	return nil
 }
 
-func (lm *LockManager) DeleteCache(key string) {
-	if lm.useCache {
-		lm.cache.Delete(key)
-	}
-}
 func (lm *LockManager) DeletePolicy(ctx context.Context, storage logical.Storage, name string) error {
 	var p *Policy
 	var err error

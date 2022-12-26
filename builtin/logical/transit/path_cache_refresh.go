@@ -33,11 +33,22 @@ func (b *backend) pathRefreshKeyCache() *framework.Path {
 }
 
 func (b *backend) refreshPolicyCache(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
-	_, err := b.pathPolicyRead(ctx, req, d)
+	name := d.Get("name").(string)
+	policyReq := keysutil.PolicyRequest{
+		Storage: req.Storage,
+		Name:    name,
+	}
+
+	p, _, err := b.GetPolicy(ctx, policyReq, b.GetRandomReader())
+	if p == nil {
+		return logical.ErrorResponse("policy with id : " + policyReq.Name + " not found"), logical.ErrInvalidRequest
+	}
 	if err != nil {
-		return nil, err
+		return logical.ErrorResponse("error while getting policy with id : " + policyReq.Name), logical.ErrInvalidRequest
 	}
 
 	ctx = keysutil.CacheRefreshContext(ctx, true)
-	return b.pathPolicyRead(ctx, req, d)
+	_, _, err = b.GetPolicy(ctx, policyReq, b.GetRandomReader())
+
+	return nil, err
 }

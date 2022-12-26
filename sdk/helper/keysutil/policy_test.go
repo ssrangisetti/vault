@@ -1067,3 +1067,73 @@ func isUnsupportedGoHashType(hashType HashType, err error) bool {
 
 	return false
 }
+
+func Test_KeyRefresh(t *testing.T) {
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+	lockManagerWithCache, _ := NewLockManager(true, 0)
+
+	// create a new policy
+	p, upserted, err := lockManagerWithCache.GetPolicy(ctx, PolicyRequest{
+		Upsert:  true,
+		Storage: storage,
+		KeyType: KeyType_AES256_GCM96,
+		Name:    "test",
+	}, rand.Reader)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p == nil {
+		t.Fatal("nil policy")
+	}
+	if !upserted {
+		t.Fatal("expected an upsert")
+	}
+
+	// re-access a new policy
+	p, upserted, err = lockManagerWithCache.GetPolicy(ctx, PolicyRequest{
+		Upsert:  true,
+		Storage: storage,
+		KeyType: KeyType_AES256_GCM96,
+		Name:    "test",
+	}, rand.Reader)
+
+	if upserted {
+		t.Fatal("should not be upsert")
+	}
+
+	// clean up backend storage
+	storage = &logical.InmemStorage{}
+
+	// read should return true
+	p, upserted, err = lockManagerWithCache.GetPolicy(ctx, PolicyRequest{
+		Upsert:  true,
+		Storage: storage,
+		KeyType: KeyType_AES256_GCM96,
+		Name:    "test",
+	}, rand.Reader)
+
+	if upserted {
+		t.Fatal("should not be upsert")
+	}
+
+	// refresh cache
+	ctx = CacheRefreshContext(ctx, true)
+
+	// read should re-create the key
+	p, upserted, err = lockManagerWithCache.GetPolicy(ctx, PolicyRequest{
+		Upsert:  true,
+		Storage: storage,
+		KeyType: KeyType_AES256_GCM96,
+		Name:    "test",
+	}, rand.Reader)
+
+	if !upserted {
+		t.Fatal("should be upsert")
+	}
+
+	if !lockManagerWithCache.useCache {
+		p.Unlock()
+	}
+}

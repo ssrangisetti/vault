@@ -60,6 +60,10 @@ type SystemView interface {
 	// name and version. Returns a PluginRunner or an error if a plugin can not be found.
 	LookupPluginVersion(ctx context.Context, pluginName string, pluginType consts.PluginType, version string) (*pluginutil.PluginRunner, error)
 
+	// ListVersionedPlugins returns information about all plugins of a certain
+	// type in the catalog, including any versioning information stored for them.
+	ListVersionedPlugins(ctx context.Context, pluginType consts.PluginType) ([]pluginutil.VersionedPlugin, error)
+
 	// NewPluginClient returns a client for managing the lifecycle of plugin
 	// processes
 	NewPluginClient(ctx context.Context, config pluginutil.PluginClientConfig) (pluginutil.PluginClient, error)
@@ -78,6 +82,9 @@ type SystemView interface {
 
 	// PluginEnv returns Vault environment information used by plugins
 	PluginEnv(context.Context) (*PluginEnvironment, error)
+
+	// VaultVersion returns the version string for the currently running Vault.
+	VaultVersion(context.Context) (string, error)
 
 	// GeneratePasswordFromPolicy generates a password from the policy referenced.
 	// If the policy does not exist, this will return an error.
@@ -109,9 +116,9 @@ type StaticSystemView struct {
 	EntityVal           *Entity
 	GroupsVal           []*Group
 	Features            license.Features
-	VaultVersion        string
 	PluginEnvironment   *PluginEnvironment
 	PasswordPolicies    map[string]PasswordGenerator
+	VersionString       string
 }
 
 type noopAuditor struct{}
@@ -176,6 +183,10 @@ func (d StaticSystemView) LookupPluginVersion(_ context.Context, _ string, _ con
 	return nil, errors.New("LookupPluginVersion is not implemented in StaticSystemView")
 }
 
+func (d StaticSystemView) ListVersionedPlugins(_ context.Context, _ consts.PluginType) ([]pluginutil.VersionedPlugin, error) {
+	return nil, errors.New("ListVersionedPlugins is not implemented in StaticSystemView")
+}
+
 func (d StaticSystemView) MlockEnabled() bool {
 	return d.EnableMlock
 }
@@ -194,6 +205,10 @@ func (d StaticSystemView) HasFeature(feature license.Features) bool {
 
 func (d StaticSystemView) PluginEnv(_ context.Context) (*PluginEnvironment, error) {
 	return d.PluginEnvironment, nil
+}
+
+func (d StaticSystemView) VaultVersion(_ context.Context) (string, error) {
+	return d.VersionString, nil
 }
 
 func (d StaticSystemView) GeneratePasswordFromPolicy(ctx context.Context, policyName string) (password string, err error) {

@@ -381,7 +381,7 @@ func TestAppRole_RoleNameLowerCasing(t *testing.T) {
 			"secret_id": secretID,
 		},
 	})
-	if err != nil {
+	if err != nil && err != logical.ErrInvalidCredentials {
 		t.Fatal(err)
 	}
 	if resp == nil || !resp.IsError() {
@@ -616,6 +616,65 @@ func TestAppRole_CIDRSubset(t *testing.T) {
 	}
 	if resp != nil && resp.IsError() {
 		t.Fatalf("resp: %#v", resp)
+	}
+}
+
+func TestAppRole_TokenBoundCIDRSubset32Mask(t *testing.T) {
+	var resp *logical.Response
+	var err error
+
+	b, storage := createBackendWithStorage(t)
+
+	roleData := map[string]interface{}{
+		"role_id":           "role-id-123",
+		"policies":          "a,b",
+		"token_bound_cidrs": "127.0.0.1/32",
+	}
+
+	roleReq := &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "role/testrole1",
+		Storage:   storage,
+		Data:      roleData,
+	}
+
+	resp, err = b.HandleRequest(context.Background(), roleReq)
+	if err != nil || (resp != nil && resp.IsError()) {
+		t.Fatalf("err: %v resp: %#v", err, resp)
+	}
+
+	secretIDData := map[string]interface{}{
+		"token_bound_cidrs": "127.0.0.1/32",
+	}
+	secretIDReq := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Storage:   storage,
+		Path:      "role/testrole1/secret-id",
+		Data:      secretIDData,
+	}
+
+	resp, err = b.HandleRequest(context.Background(), secretIDReq)
+	if err != nil {
+		t.Fatalf("err: %v resp: %#v", err, resp)
+	}
+
+	secretIDData = map[string]interface{}{
+		"token_bound_cidrs": "127.0.0.1/24",
+	}
+	secretIDReq = &logical.Request{
+		Operation: logical.UpdateOperation,
+		Storage:   storage,
+		Path:      "role/testrole1/secret-id",
+		Data:      secretIDData,
+	}
+
+	resp, err = b.HandleRequest(context.Background(), secretIDReq)
+	if resp != nil {
+		t.Fatalf("resp:%#v", resp)
+	}
+
+	if err == nil {
+		t.Fatal("expected an error")
 	}
 }
 

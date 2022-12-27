@@ -298,6 +298,10 @@ func (b *SystemBackend) configPaths() []*framework.Path {
 				},
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ReadOperation: &framework.PathOperation{
+					Callback: b.handleLoggersRead,
+					Summary:  "Read the log level for all existing loggers.",
+				},
 				logical.UpdateOperation: &framework.PathOperation{
 					Callback: b.handleLoggersWrite,
 					Summary:  "Modify the log level for all existing loggers.",
@@ -322,6 +326,10 @@ func (b *SystemBackend) configPaths() []*framework.Path {
 				},
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ReadOperation: &framework.PathOperation{
+					Callback: b.handleLoggersByNameRead,
+					Summary:  "Read the log level for a single logger.",
+				},
 				logical.UpdateOperation: &framework.PathOperation{
 					Callback: b.handleLoggersByNameWrite,
 					Summary:  "Modify the log level of a single logger.",
@@ -1066,6 +1074,28 @@ func (b *SystemBackend) internalPaths() []*framework.Path {
 	}
 }
 
+func (b *SystemBackend) introspectionPaths() []*framework.Path {
+	return []*framework.Path{
+		{
+			Pattern: "internal/inspect/router/" + framework.GenericNameRegex("tag"),
+			Fields: map[string]*framework.FieldSchema{
+				"tag": {
+					Type:        framework.TypeString,
+					Description: "Name of subtree being observed",
+				},
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ReadOperation: &framework.PathOperation{
+					Callback: b.pathInternalInspectRouter,
+					Summary:  "Expose the route entry and mount entry tables present in the router",
+				},
+			},
+			HelpSynopsis:    strings.TrimSpace(sysHelp["internal-inspect-router"][0]),
+			HelpDescription: strings.TrimSpace(sysHelp["internal-inspect-router"][1]),
+		},
+	}
+}
+
 func (b *SystemBackend) capabilitiesPaths() []*framework.Path {
 	return []*framework.Path{
 		{
@@ -1542,6 +1572,14 @@ func (b *SystemBackend) authPaths() []*framework.Path {
 					Type:        framework.TypeString,
 					Description: strings.TrimSpace(sysHelp["token_type"][0]),
 				},
+				"user_lockout_config": {
+					Type:        framework.TypeMap,
+					Description: strings.TrimSpace(sysHelp["tune_user_lockout_config"][0]),
+				},
+				"plugin_version": {
+					Type:        framework.TypeString,
+					Description: strings.TrimSpace(sysHelp["plugin-catalog_version"][0]),
+				},
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
@@ -1600,7 +1638,7 @@ func (b *SystemBackend) authPaths() []*framework.Path {
 					Type:        framework.TypeKVPairs,
 					Description: strings.TrimSpace(sysHelp["auth_options"][0]),
 				},
-				"version": {
+				"plugin_version": {
 					Type:        framework.TypeString,
 					Description: strings.TrimSpace(sysHelp["plugin-catalog_version"][0]),
 				},
@@ -1921,6 +1959,14 @@ func (b *SystemBackend) mountPaths() []*framework.Path {
 					Type:        framework.TypeCommaStringSlice,
 					Description: strings.TrimSpace(sysHelp["tune_allowed_managed_keys"][0]),
 				},
+				"plugin_version": {
+					Type:        framework.TypeString,
+					Description: strings.TrimSpace(sysHelp["plugin-catalog_version"][0]),
+				},
+				"user_lockout_config": {
+					Type:        framework.TypeMap,
+					Description: strings.TrimSpace(sysHelp["tune_user_lockout_config"][0]),
+				},
 			},
 
 			Callbacks: map[logical.Operation]framework.OperationFunc{
@@ -1975,7 +2021,7 @@ func (b *SystemBackend) mountPaths() []*framework.Path {
 					Type:        framework.TypeKVPairs,
 					Description: strings.TrimSpace(sysHelp["mount_options"][0]),
 				},
-				"version": {
+				"plugin_version": {
 					Type:        framework.TypeString,
 					Description: strings.TrimSpace(sysHelp["plugin-catalog_version"][0]),
 				},
@@ -2008,6 +2054,32 @@ func (b *SystemBackend) mountPaths() []*framework.Path {
 
 			HelpSynopsis:    strings.TrimSpace(sysHelp["mounts"][0]),
 			HelpDescription: strings.TrimSpace(sysHelp["mounts"][1]),
+		},
+	}
+}
+
+func (b *SystemBackend) lockedUserPaths() []*framework.Path {
+	return []*framework.Path{
+		{
+			Pattern: "lockedusers/(?P<mount_accessor>.+?)/unlock/(?P<alias_identifier>.+)",
+			Fields: map[string]*framework.FieldSchema{
+				"mount_accessor": {
+					Type:        framework.TypeString,
+					Description: strings.TrimSpace(sysHelp["mount_accessor"][0]),
+				},
+				"alias_identifier": {
+					Type:        framework.TypeString,
+					Description: strings.TrimSpace(sysHelp["alias_identifier"][0]),
+				},
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.UpdateOperation: &framework.PathOperation{
+					Callback: b.handleUnlockUser,
+					Summary:  "Unlocks the user with given mount_accessor and alias_identifier",
+				},
+			},
+			HelpSynopsis:    strings.TrimSpace(sysHelp["unlock_user"][0]),
+			HelpDescription: strings.TrimSpace(sysHelp["unlock_user"][1]),
 		},
 	}
 }

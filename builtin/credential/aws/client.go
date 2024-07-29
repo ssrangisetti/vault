@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+
 package awsauth
 
 import (
@@ -119,7 +122,7 @@ func (b *backend) getClientConfig(ctx context.Context, s logical.Storage, region
 				return nil, fmt.Errorf("could not obtain sts client: %w", err)
 			}
 			inputParams := &sts.GetCallerIdentityInput{}
-			identity, err := client.GetCallerIdentity(inputParams)
+			identity, err := client.GetCallerIdentityWithContext(ctx, inputParams)
 			if err != nil {
 				return nil, fmt.Errorf("unable to fetch current caller: %w", err)
 			}
@@ -216,7 +219,6 @@ func (b *backend) clientEC2(ctx context.Context, s logical.Storage, region, acco
 	// Create an AWS config object using a chain of providers
 	var awsConfig *aws.Config
 	awsConfig, err = b.getClientConfig(ctx, s, region, stsRole, accountID, "ec2")
-
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +278,6 @@ func (b *backend) clientIAM(ctx context.Context, s logical.Storage, region, acco
 	// Create an AWS config object using a chain of providers
 	var awsConfig *aws.Config
 	awsConfig, err = b.getClientConfig(ctx, s, region, stsRole, accountID, "iam")
-
 	if err != nil {
 		return nil, err
 	}

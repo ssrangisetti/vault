@@ -6,9 +6,11 @@ description: The `/sys/health` endpoint is used to check the health status of Va
 
 # `/sys/health`
 
+@include 'alerts/restricted-root.mdx'
+
 The `/sys/health` endpoint is used to check the health status of Vault.
 
-## Read Health Information
+## Read health information
 
 This endpoint returns the health status of Vault. This matches the semantics of
 a Consul HTTP health check and provides a simple way to monitor the health of a
@@ -23,10 +25,14 @@ The default status codes are:
 
 - `200` if initialized, unsealed, and active
 - `429` if unsealed and standby
-- `472` if disaster recovery mode replication secondary and active
+- `472` if disaster recovery secondary (both active and standby nodes within the DR secondary)
 - `473` if performance standby
 - `501` if not initialized
 - `503` if sealed
+
+<Note>
+In rare occasions such as during cluster instability, a node may return 429 even when it was part of a DR secondary (472) or a perf-standby (473). When configuring a Load Balancer based on health status API, it's important to recognize that a 429 indicates a standby node that doesn't process the request itself, read or write.
+</Note>
 
 ### Parameters
 
@@ -58,14 +64,14 @@ The default status codes are:
 - `uninitcode` `(int: 501)` – Specifies the status code that should be returned
   for a uninitialized node.
 
-### Sample Request
+### Sample request
 
 ```shell-session
 $ curl \
     http://127.0.0.1:8200/v1/sys/health
 ```
 
-### Sample Response
+### Sample response
 
 This response is only returned for a `GET` request.
 
@@ -89,7 +95,7 @@ standby of its status.
 }
 ```
 
-### Sample Request to customize the status code being returned
+### Sample request to customize the status code being returned
 
 ```shell-session
 $ curl -i https://127.0.0.1:8200/v1/sys/health\?drsecondarycode\=200
@@ -102,7 +108,7 @@ content-length: 364
 date: Wed, 26 Jan 2022 09:21:13 GMT
 ```
 
-### Sample Response
+### Sample response
 
 This response is only returned for a `GET` request.
 

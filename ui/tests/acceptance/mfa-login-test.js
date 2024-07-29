@@ -1,37 +1,42 @@
+/**
+ * Copyright (c) HashiCorp, Inc.
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
 import { module, test } from 'qunit';
 import { setupApplicationTest } from 'ember-qunit';
 import { click, currentRouteName, fillIn, visit, waitUntil, find } from '@ember/test-helpers';
 import { setupMirage } from 'ember-cli-mirage/test-support';
-import ENV from 'vault/config/environment';
-import { validationHandler } from '../../mirage/handlers/mfa-login';
+import mfaLoginHandler, { validationHandler } from '../../mirage/handlers/mfa-login';
 
 module('Acceptance | mfa-login', function (hooks) {
   setupApplicationTest(hooks);
   setupMirage(hooks);
 
-  hooks.before(function () {
-    ENV['ember-cli-mirage'].handler = 'mfaLogin';
-  });
   hooks.beforeEach(function () {
+    mfaLoginHandler(this.server);
+    this.auth = this.owner.lookup('service:auth');
     this.select = async (select = 0, option = 1) => {
       const selector = `[data-test-mfa-select="${select}"]`;
       const value = this.element.querySelector(`${selector} option:nth-child(${option + 1})`).value;
       await fillIn(`${selector} select`, value);
     };
+    return visit('/vault/logout');
   });
-  hooks.after(function () {
-    ENV['ember-cli-mirage'].handler = null;
+  hooks.afterEach(function () {
+    // Manually clear token after each so that future tests don't get into a weird state
+    this.auth.deleteCurrentToken();
   });
 
   const login = async (user) => {
-    await visit('/vault/auth');
+    await visit('/vault/auth?with=token');
     await fillIn('[data-test-select="auth-method"]', 'userpass');
     await fillIn('[data-test-username]', user);
     await fillIn('[data-test-password]', 'test');
     await click('[data-test-auth-submit]');
   };
   const didLogin = (assert) => {
-    assert.strictEqual(currentRouteName(), 'vault.cluster.secrets.backends', 'Route transitions after login');
+    assert.strictEqual(currentRouteName(), 'vault.cluster.dashboard', 'Route transitions after login');
   };
   const validate = async (multi) => {
     await fillIn('[data-test-mfa-passcode="0"]', 'test');
@@ -73,8 +78,8 @@ module('Acceptance | mfa-login', function (hooks) {
         .hasText('Check device for push notification', 'Push notification instruction renders');
       assert.dom('[data-test-mfa-validate]').isDisabled('Button is disabled while validating');
       assert
-        .dom('[data-test-mfa-validate]')
-        .hasClass('is-loading', 'Loading class applied to button while validating');
+        .dom('[data-test-mfa-validate] [data-test-icon="loading"]')
+        .exists('Loading icon shows while validating');
       return validationHandler(schema, req);
     });
 

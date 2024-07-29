@@ -1,8 +1,52 @@
+/**
+ * Copyright (c) HashiCorp, Inc.
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
 import { parseAPITimestamp } from 'core/utils/date-formatters';
-import { compareAsc } from 'date-fns';
+import { compareAsc, getUnixTime, isWithinInterval } from 'date-fns';
+
+// returns array of VersionHistoryModels for noteworthy upgrades: 1.9, 1.10
+// that occurred between timestamps (i.e. queried activity data)
+export const filterVersionHistory = (versionHistory, start, end) => {
+  if (versionHistory) {
+    const upgrades = versionHistory.reduce((array, upgradeData) => {
+      const includesVersion = (v) =>
+        // only add first match, disregard subsequent patch releases of the same version
+        upgradeData.version.match(v) && !array.some((d) => d.version.match(v));
+
+      ['1.9', '1.10'].forEach((v) => {
+        if (includesVersion(v)) array.push(upgradeData);
+      });
+
+      return array;
+    }, []);
+
+    // if there are noteworthy upgrades, only return those during queried date range
+    if (upgrades.length) {
+      const startDate = parseAPITimestamp(start);
+      const endDate = parseAPITimestamp(end);
+      return upgrades.filter(({ timestampInstalled }) => {
+        const upgradeDate = parseAPITimestamp(timestampInstalled);
+        return isWithinInterval(upgradeDate, { start: startDate, end: endDate });
+      });
+    }
+  }
+  return [];
+};
+
+export const formatDateObject = (dateObj, isEnd) => {
+  if (dateObj) {
+    const { year, monthIdx } = dateObj;
+    // day=0 for Date.UTC() returns the last day of the month before
+    // increase monthIdx by one to get last day of queried month
+    const utc = isEnd ? Date.UTC(year, monthIdx + 1, 0) : Date.UTC(year, monthIdx, 1);
+    return getUnixTime(utc);
+  }
+};
 
 export const formatByMonths = (monthsArray) => {
-  // the months array will always include a timestamp of the month and either new/total client data or counts = null
+  // the monthsArray will always include a timestamp of the month and either new/total client data or counts = null
   if (!Array.isArray(monthsArray)) return monthsArray;
 
   const sortedPayload = sortMonthsByTimestamp(monthsArray);
@@ -15,11 +59,18 @@ export const formatByMonths = (monthsArray) => {
       const newCounts = m.new_clients ? flattenDataset(m.new_clients) : {};
       return {
         month,
+        timestamp: m.timestamp,
         ...totalCounts,
         namespaces: formatByNamespace(m.namespaces) || [],
-        namespaces_by_key: namespaceArrayToObject(totalClientsByNamespace, newClientsByNamespace, month),
+        namespaces_by_key: namespaceArrayToObject(
+          totalClientsByNamespace,
+          newClientsByNamespace,
+          month,
+          m.timestamp
+        ),
         new_clients: {
           month,
+          timestamp: m.timestamp,
           ...newCounts,
           namespaces: formatByNamespace(m.new_clients?.namespaces) || [],
         },
@@ -57,11 +108,12 @@ export const formatByNamespace = (namespaceArray) => {
 export const homogenizeClientNaming = (object) => {
   // if new key names exist, only return those key/value pairs
   if (Object.keys(object).includes('entity_clients')) {
-    const { clients, entity_clients, non_entity_clients } = object;
+    const { clients, entity_clients, non_entity_clients, secret_syncs } = object;
     return {
       clients,
       entity_clients,
       non_entity_clients,
+      secret_syncs,
     };
   }
   // if object only has outdated key names, update naming
@@ -92,7 +144,7 @@ export const sortMonthsByTimestamp = (monthsArray) => {
   );
 };
 
-export const namespaceArrayToObject = (totalClientsByNamespace, newClientsByNamespace, month) => {
+export const namespaceArrayToObject = (totalClientsByNamespace, newClientsByNamespace, month, timestamp) => {
   if (!totalClientsByNamespace) return {}; // return if no data for that month
   // all 'new_client' data resides within a separate key of each month (see data structure below)
   // FIRST: iterate and nest respective 'new_clients' data within each namespace and mount object
@@ -100,8 +152,8 @@ export const namespaceArrayToObject = (totalClientsByNamespace, newClientsByName
   const nestNewClientsWithinNamespace = totalClientsByNamespace?.map((ns) => {
     const newNamespaceCounts = newClientsByNamespace?.find((n) => n.label === ns.label);
     if (newNamespaceCounts) {
-      const { label, clients, entity_clients, non_entity_clients } = newNamespaceCounts;
-      const newClientsByMount = [...newNamespaceCounts?.mounts];
+      const { label, clients, entity_clients, non_entity_clients, secret_syncs } = newNamespaceCounts;
+      const newClientsByMount = [...newNamespaceCounts.mounts];
       const nestNewClientsWithinMounts = ns.mounts?.map((mount) => {
         const new_clients = newClientsByMount?.find((m) => m.label === mount.label) || {};
         return {
@@ -116,6 +168,8 @@ export const namespaceArrayToObject = (totalClientsByNamespace, newClientsByName
           clients,
           entity_clients,
           non_entity_clients,
+          secret_syncs,
+          mounts: newClientsByMount,
         },
         mounts: [...nestNewClientsWithinMounts],
       };
@@ -133,114 +187,122 @@ export const namespaceArrayToObject = (totalClientsByNamespace, newClientsByName
     namespaceObject.mounts.forEach((mountObject) => {
       mounts_by_key[mountObject.label] = {
         month,
+        timestamp,
         ...mountObject,
         new_clients: { month, ...mountObject.new_clients },
       };
     });
 
-    const { label, clients, entity_clients, non_entity_clients, new_clients } = namespaceObject;
+    const { label, clients, entity_clients, non_entity_clients, secret_syncs, new_clients } = namespaceObject;
     namespaces_by_key[label] = {
       month,
+      timestamp,
       clients,
       entity_clients,
       non_entity_clients,
+      secret_syncs,
       new_clients: { month, ...new_clients },
       mounts_by_key,
     };
   });
   return namespaces_by_key;
-  // structure of object returned
-  // namespace_by_key: {
-  //   "namespace_label": {
-  //     month: "3/22",
-  //     clients: 32,
-  //     entity_clients: 16,
-  //     non_entity_clients: 16,
-  //     new_clients: {
-  //       month: "3/22",
-  //       clients: 5,
-  //       entity_clients: 2,
-  //       non_entity_clients: 3,
-  //     },
-  //     mounts_by_key: {
-  //       "mount_label": {
-  //          month: "3/22",
-  //          clients: 3,
-  //          entity_clients: 2,
-  //          non_entity_clients: 1,
-  //          new_clients: {
-  //           month: "3/22",
-  //           clients: 5,
-  //           entity_clients: 2,
-  //           non_entity_clients: 3,
-  //         },
-  //       },
-  //     },
-  //   },
-  // };
+  /*
+  structure of object returned
+  namespace_by_key: {
+    "namespace_label": {
+      month: "3/22",
+      clients: 32,
+      entity_clients: 16,
+      non_entity_clients: 16,
+      new_clients: {
+        month: "3/22",
+        clients: 5,
+        entity_clients: 2,
+        non_entity_clients: 3,
+        mounts: [...array of this namespace's mounts and their new client counts],
+      },
+      mounts_by_key: {
+        "mount_label": {
+           month: "3/22",
+           clients: 3,
+           entity_clients: 2,
+           non_entity_clients: 1,
+           new_clients: {
+            month: "3/22",
+            clients: 5,
+            entity_clients: 2,
+            non_entity_clients: 3,
+          },
+        },
+      },
+    },
+  };
+  */
 };
 
-// API RESPONSE STRUCTURE:
-// data: {
-//   ** by_namespace organized in descending order of client count number **
-//   by_namespace: [
-//     {
-//       namespace_id: '96OwG',
-//       namespace_path: 'test-ns/',
-//       counts: {},
-//       mounts: [{ mount_path: 'path-1', counts: {} }],
-//     },
-//   ],
-//   ** months organized in ascending order of timestamps, oldest to most recent
-//   months: [
-//     {
-//       timestamp: '2022-03-01T00:00:00Z',
-//       counts: {},
-//       namespaces: [
-//         {
-//           namespace_id: 'root',
-//           namespace_path: '',
-//           counts: {},
-//           mounts: [{ mount_path: 'auth/up2/', counts: {} }],
-//         },
-//       ],
-//       new_clients: {
-//         counts: {},
-//         namespaces: [
-//           {
-//             namespace_id: 'root',
-//             namespace_path: '',
-//             counts: {},
-//             mounts: [{ mount_path: 'auth/up2/', counts: {} }],
-//           },
-//         ],
-//       },
-//     },
-//     {
-//       timestamp: '2022-04-01T00:00:00Z',
-//       counts: {},
-//       namespaces: [
-//         {
-//           namespace_id: 'root',
-//           namespace_path: '',
-//           counts: {},
-//           mounts: [{ mount_path: 'auth/up2/', counts: {} }],
-//         },
-//       ],
-//       new_clients: {
-//         counts: {},
-//         namespaces: [
-//           {
-//             namespace_id: 'root',
-//             namespace_path: '',
-//             counts: {},
-//             mounts: [{ mount_path: 'auth/up2/', counts: {} }],
-//           },
-//         ],
-//       },
-//     },
-//   ],
-//   start_time: 'start timestamp string',
-//   end_time: 'end timestamp string',
-//   total: { clients: 300, non_entity_clients: 100, entity_clients: 400} ,
-// }
+/*
+API RESPONSE STRUCTURE:
+data: {
+  ** by_namespace organized in descending order of client count number **
+  by_namespace: [
+    {
+      namespace_id: '96OwG',
+      namespace_path: 'test-ns/',
+      counts: {},
+      mounts: [{ mount_path: 'path-1', counts: {} }],
+    },
+  ],
+  ** months organized in ascending order of timestamps, oldest to most recent
+  months: [
+    {
+      timestamp: '2022-03-01T00:00:00Z',
+      counts: {},
+      namespaces: [
+        {
+          namespace_id: 'root',
+          namespace_path: '',
+          counts: {},
+          mounts: [{ mount_path: 'auth/up2/', counts: {} }],
+        },
+      ],
+      new_clients: {
+        counts: {},
+        namespaces: [
+          {
+            namespace_id: 'root',
+            namespace_path: '',
+            counts: {},
+            mounts: [{ mount_path: 'auth/up2/', counts: {} }],
+          },
+        ],
+      },
+    },
+    {
+      timestamp: '2022-04-01T00:00:00Z',
+      counts: {},
+      namespaces: [
+        {
+          namespace_id: 'root',
+          namespace_path: '',
+          counts: {},
+          mounts: [{ mount_path: 'auth/up2/', counts: {} }],
+        },
+      ],
+      new_clients: {
+        counts: {},
+        namespaces: [
+          {
+            namespace_id: 'root',
+            namespace_path: '',
+            counts: {},
+            mounts: [{ mount_path: 'auth/up2/', counts: {} }],
+          },
+        ],
+      },
+    },
+  ],
+  start_time: 'start timestamp string',
+  end_time: 'end timestamp string',
+  total: { clients: 300, non_entity_clients: 100, entity_clients: 400} ,
+}
+*/

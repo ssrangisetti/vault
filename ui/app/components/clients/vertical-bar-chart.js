@@ -1,3 +1,8 @@
+/**
+ * Copyright (c) HashiCorp, Inc.
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
 import Component from '@glimmer/component';
 import { action } from '@ember/object';
 import { tracked } from '@glimmer/tracking';
@@ -8,10 +13,12 @@ import { axisLeft, axisBottom } from 'd3-axis';
 import { scaleLinear, scalePoint } from 'd3-scale';
 import { stack } from 'd3-shape';
 import {
+  BAR_WIDTH,
   GREY,
-  LIGHT_AND_DARK_BLUE,
+  BLUE_PALETTE,
   SVG_DIMENSIONS,
   TRANSLATE,
+  calculateSum,
   formatNumbers,
 } from 'vault/utils/chart-helpers';
 import { formatNumber } from 'core/helpers/format-number';
@@ -31,16 +38,10 @@ import { formatNumber } from 'core/helpers/format-number';
  * @param {string} [noDataMessage] - custom empty state message that displays when no dataset is passed to the chart
  */
 
-const BAR_WIDTH = 7; // data bar width is 7 pixels
 export default class VerticalBarChart extends Component {
   @tracked tooltipTarget = '';
   @tracked tooltipTotal = '';
-  @tracked entityClients = '';
-  @tracked nonEntityClients = '';
-
-  get chartLegend() {
-    return this.args.chartLegend;
-  }
+  @tracked tooltipStats = [];
 
   get xKey() {
     return this.args.xKey || 'month';
@@ -54,7 +55,7 @@ export default class VerticalBarChart extends Component {
   renderChart(element, [chartData]) {
     const dataset = chartData;
     const filteredData = dataset.filter((e) => Object.keys(e).includes('clients')); // months with data will contain a 'clients' key (otherwise only a timestamp)
-    const stackFunction = stack().keys(this.chartLegend.map((l) => l.key));
+    const stackFunction = stack().keys(this.args.chartLegend.map((l) => l.key));
     const stackedData = stackFunction(filteredData);
     const chartSvg = select(element);
     const domainMax = max(filteredData.map((d) => d[this.yKey]));
@@ -76,7 +77,7 @@ export default class VerticalBarChart extends Component {
       .data(stackedData)
       .enter()
       .append('g')
-      .style('fill', (d, i) => LIGHT_AND_DARK_BLUE[i]);
+      .style('fill', (d, i) => BLUE_PALETTE[i]);
 
     dataBars
       .selectAll('rect')
@@ -93,13 +94,15 @@ export default class VerticalBarChart extends Component {
     const tooltipTether = chartSvg
       .append('g')
       .attr('transform', `translate(${BAR_WIDTH / 2})`)
-      .attr('data-test-vertical-chart', 'tool-tip-tethers')
+      .attr('data-test-vertical-chart', 'tooltip-tethers')
       .selectAll('circle')
       .data(filteredData)
       .enter()
       .append('circle')
+      .style('opacity', '0')
       .attr('cy', (d) => `${100 - yScale(d[this.yKey])}%`)
-      .attr('cx', (d) => xScale(d[this.xKey]));
+      .attr('cx', (d) => xScale(d[this.xKey]))
+      .attr('r', 1);
 
     // MAKE AXES //
     const yAxisScale = scaleLinear()
@@ -148,9 +151,15 @@ export default class VerticalBarChart extends Component {
     // MOUSE EVENT FOR TOOLTIP
     tooltipRect.on('mouseover', (data) => {
       const hoveredMonth = data[this.xKey];
-      this.tooltipTotal = `${formatNumber([data[this.yKey]])} ${data.new_clients ? 'total' : 'new'} clients`;
-      this.entityClients = `${formatNumber([data.entity_clients])} entity clients`;
-      this.nonEntityClients = `${formatNumber([data.non_entity_clients])} non-entity clients`;
+      const stackedNumbers = []; // accumulates stacked dataset values to calculate total
+      this.tooltipStats = []; // clear stats
+      this.args.chartLegend.forEach(({ key, label }) => {
+        stackedNumbers.push(data[key]);
+        this.tooltipStats.pushObject(`${formatNumber([data[key]])} ${label}`);
+      });
+      this.tooltipTotal = `${formatNumber([calculateSum(stackedNumbers)])} ${
+        data.new_clients ? 'total' : 'new'
+      } clients`;
       // filter for the tether point that matches the hoveredMonth
       const hoveredElement = tooltipTether.filter((data) => data.month === hoveredMonth).node();
       this.tooltipTarget = hoveredElement; // grab the node from the list of rects

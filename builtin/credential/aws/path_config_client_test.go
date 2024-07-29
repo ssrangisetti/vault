@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+
 package awsauth
 
 import (
@@ -95,7 +98,6 @@ func TestBackend_pathConfigClient(t *testing.T) {
 		Data:      data,
 		Storage:   storage,
 	})
-
 	if err != nil {
 		t.Fatal(err)
 	}
